@@ -1,0 +1,76 @@
+#!/bin/bash
+
+set -e
+
+DEVMODE=""
+echo "$@" | grep -q -- --devmode && DEVMODE="--devmode"
+
+CLASSIC=""
+echo "$@" | grep -q -- --devmode && CLASSIC="--classic"
+
+[ "$EUID" -eq 0 ] || { echo 'Please run as root. Exiting.' && exit; }
+
+mkdir -p /etc/onap
+touch /etc/onap/sources.list
+if [ ! -s /etc/onap/sources.list ]; then
+    echo '# Add the URLs above this line' > /etc/onap/sources.list
+    echo 'https://repo.onapcraft.xyz' >> /etc/onap/sources.list
+fi
+
+sed -i 's|https://repo.onapcraft.xyz|https://repo.onapcraft.xyz|g' /etc/onap/sources.list || true
+
+json_val() {
+    python3 -c "import sys, json; print(json.load(sys.stdin)$1)"
+}
+
+install_core() {
+    snap info snapd &>/dev/null || install_snap install snapd
+    snap info core18 &>/dev/null || install_snap install core18
+    snap info core20 &>/dev/null || install_snap install core20
+}
+
+install_snap() {
+    install_core
+    { cat /etc/onap/sources.list; echo; } | while read -r URL; do
+        version=$(curl "$URL/onap/v1/$2/$2.json" -f -s | json_val "['version']" 2>/dev/null || true)
+        if [ "$version" != "" ]; then
+            arch=$(curl "$URL/onap/v1/$2/$2.json" -f -s | json_val "['arch']" 2>/dev/null || true)
+            epoch=$(curl "$URL/onap/v1/$2/$2.json" -f -s | json_val "['epoch']" 2>/dev/null || true)
+            snap_url="$URL/onap/v1/${2}/${2}_${version}_${arch}.snap"
+            mkdir -p /tmp/onaps
+            rm -f /tmp/onaps/${2}*
+            echo "Downloading $2..."
+            curl -f -# -o "/tmp/onaps/${2}.snap" "${snap_url}"
+            md5sum=$(curl "$URL/onap/v1/$2/$2.json" -s | json_val "['md5sum']")
+            md5sum --status -c <(echo "${md5sum} /tmp/onaps/${2}.snap") && echo 'Verified the downloaded snap.' || (echo 'Failed verification.' && exit 1)
+            if [ "${2}" == "onap" ]; then CLASSIC='--classic'; fi
+            remove_snap_from_list "remove" "$2"
+            ( file "/tmp/onaps/${2}.snap" | grep -q Squashfs ) && snap install --dangerous "/tmp/onaps/${2}.snap" \
+                $DEVMODE $CLASSIC || echo 'Not a snap or an error occured.'
+            mkdir -p /var/lib/onap
+            printf "\n$2:${epoch}\n" >> /var/lib/onap/list
+            sed -i '/^$/d' /var/lib/onap/list
+            break
+        fi
+    done || true
+}
+
+remove_snap_from_list() {
+    mkdir -p /var/lib/onap && touch /var/lib/onap/list
+    sed -i "/$2:/d" /var/lib/onap/list && sed -i '/^$/d' /var/lib/onap/list
+}
+
+if [ "$1" == "install" ] && [ "$2" != "" ]; then
+	install_snap "$1" "$2";
+elif [ "$1" == "url" ] || [ "$1" == "repo" ]; then
+	echo "Add all the repo URLs to the beginning of /etc/onap/sources.list for them to be used by onap." \
+        "The order matters, so the repos at the top of the file will have highest priority."
+elif [ "$1" == "refresh" ] && [ "$2" != "" ]; then
+	install_snap "$1" "$2";
+elif [ "$1" == "remove" ] && [ "$2" != "" ]; then
+        snap remove "$2" && remove_snap_from_list "$1" "$2";
+elif [ "$1" == "download" ]; then
+	echo 'Sorry, not implemented yet.';
+else
+    snap $@ | sed 's/onap/onap/g' | sed 's/onaps/onaps/g' | sed 's/onapd/onapd/g'
+fi

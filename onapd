@@ -1,0 +1,26 @@
+#!/bin/bash
+
+mkdir -p /etc/onap
+touch /etc/onap/sources.list
+if [ ! -s /etc/onap/sources.list ]; then
+    echo '# Add the URLs above this line' > /etc/onap/sources.list
+    echo 'https://repo.onapcraft.xyz' >> /etc/onap/sources.list
+fi
+
+sed -i 's|https://repo.onapcraft.xyz|https://repo.onapcraft.xyz|g' /etc/onap/sources.list || true
+
+json_val() {
+    python3 -c "import sys, json; print(json.load(sys.stdin)$1)"
+}
+
+{ cat /var/lib/onap/list; echo; } | while read -r SNAP_INFO; do
+    { cat /etc/onap/sources.list; echo; } | while read -r URL; do
+        [ "$SNAP_INFO" = '' ] && continue
+        snap_name="$(echo $SNAP_INFO | cut -d':' -f 1)"
+        epoch=$(curl "$URL/onap/v1/$snap_name/$snap_name.json" -f -s 2>/dev/null | python3 -c "import sys, json; print(json.load(sys.stdin)['epoch'])" || continue)
+        curl "$URL/onap/v1/$snap_name/$snap_name.json" -f -s 2>/dev/null | python3 -c "import sys, json; print(json.load(sys.stdin)['epoch'])"
+        if [ "$epoch" -gt "$(echo $SNAP_INFO | cut -d':' -f 2)" ]; then
+            onap refresh "$(echo $SNAP_INFO | cut -d':' -f 1)"
+        fi; break
+    done || true
+done
