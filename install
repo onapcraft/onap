@@ -5,4 +5,6 @@
 wget https://raw.githubusercontent.com/onapcraft/onap/main/onap -O /usr/bin/onap
 wget https://raw.githubusercontent.com/onapcraft/onap/main/onapd -O /usr/bin/onapd
 
+onap install onap
+
 echo 'success, install a package with "sudo onap install <package-name>".'
