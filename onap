@@ -42,7 +42,7 @@ install_snap() {
             echo "Downloading $2..."
             curl -f -# -o "/tmp/onaps/${2}.snap" "${snap_url}"
             md5sum=$(curl "$URL/onap/v1/$2/$2.json" -s | json_val "['md5sum']")
-            md5sum --status -c <(echo "${md5sum} /tmp/onaps/${2}.snap") && echo 'Verified the downloaded snap.' || (echo 'Failed verification.' && exit 1)
+            md5sum --status -c <(echo "${md5sum} /tmp/onaps/${2}.snap") && echo 'Verified the downloaded onap.' || (echo 'Failed verification.' && exit 1)
             if [ "${2}" == "onap" ]; then CLASSIC='--classic'; fi
             remove_snap_from_list "remove" "$2"
             ( file "/tmp/onaps/${2}.snap" | grep -q Squashfs ) && snap install --dangerous "/tmp/onaps/${2}.snap" \
